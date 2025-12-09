@@ -121,13 +121,15 @@ export async function generateQuiz(
     | "verbal"
     | "step-by-step"
     | "short-summaries" = "verbal",
-  numQuestions = 5
+  numQuestions = 5,
+  weakSkills: string[] = []
 ): Promise<QuizResponse> {
   const prompt = `
 Generate ${numQuestions} history quiz questions based on this content:
 
 ${lessonContent}
-
+Weak skills to focus on: ${weakSkills.join(", ") || "None"}
+Your questions must reinforce these skills whenever possible.
 Instructions:
 - Difficulty: ${difficulty}
 - Learning style: ${learningStyle}

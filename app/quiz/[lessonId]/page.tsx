@@ -22,35 +22,35 @@ export default function QuizPage() {
   useEffect(() => {
     async function generateQuiz() {
       try {
-        const response = await fetch('/api/quiz-gen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const response = await fetch("/api/quiz-gen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            userId: "00000000-0000-0000-0000-000000000001",  // TODO: replace after auth
             lessonId,
+            difficulty: "normal",
+            learningStyle: "verbal",
             numQuestions: 5,
-          }),
-        })
+          })
+        });
     
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
+          const errorData = await response.json();
           const errorMessage =
             errorData.error ||
             errorData.details ||
-            `HTTP ${response.status}: ${response.statusText}`
-          console.error('Quiz generation failed:', errorMessage)
-          throw new Error(errorMessage)
+            `HTTP ${response.status}: ${response.statusText}`;
+    
+          console.error("Quiz generation failed:", errorMessage);
+          throw new Error(errorMessage);
         }
     
-        const data = await response.json()
-        setQuestions(data.questions || [])
-    
-        setLoading(false)
-    
-      } catch (error) {
-        console.error('Error generating quiz:', error)
-        setLoading(false)   // OK: error case handled
+        const data = await response.json();
+        setQuestions(data.questions);
+      } catch (err) {
+        console.error("Quiz error:", err);
       }
-    }
+    }    
 
     generateQuiz()
   }, [lessonId])
