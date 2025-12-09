@@ -1,69 +1,90 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { QuizQuestion } from '@/lib/ai'
+import type { QuizQuestion } from '@/lib/ai'
 
 export default function QuizPage() {
   const params = useParams()
-  const router = useRouter()
   const lessonId = params.lessonId as string
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [loading, setLoading] = useState(true)
   const [currentQuestion, setCurrentQuestion] = useState(0)
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({})
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>(
+    {}
+  )
   const [submitted, setSubmitted] = useState(false)
   const [score, setScore] = useState<number | null>(null)
-  const [userId] = useState('00000000-0000-0000-0000-000000000001') // In production, get from auth
+  const [userId] = useState('00000000-0000-0000-0000-000000000001')
   const [bktStates, setBktStates] = useState<Record<string, number>>({})
+  const [weakSkills, setWeakSkills] = useState<string[]>([])
+  const [usedDifficulty, setUsedDifficulty] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function generateQuiz() {
-      try {
-        const response = await fetch("/api/quiz-gen", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: "00000000-0000-0000-0000-000000000001",  // TODO: replace after auth
-            lessonId,
-            difficulty: "normal",
-            learningStyle: "verbal",
-            numQuestions: 5,
-          })
-        });
-    
-        if (!response.ok) {
-          const errorData = await response.json();
-          const errorMessage =
-            errorData.error ||
+  /* ----------------------------------------------------
+     FUNCTION: fetch quiz from server
+  ---------------------------------------------------- */
+  async function loadQuiz() {
+    setLoading(true)
+    setSubmitted(false)
+    setScore(null)
+    setCurrentQuestion(0)
+    setSelectedAnswers({})
+    setBktStates({})
+
+    try {
+      const response = await fetch('/api/quiz-gen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          lessonId,
+          difficulty: null,
+          learningStyle: 'verbal',
+          numQuestions: 7,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(
+          errorData.error ||
             errorData.details ||
-            `HTTP ${response.status}: ${response.statusText}`;
-    
-          console.error("Quiz generation failed:", errorMessage);
-          throw new Error(errorMessage);
-        }
-    
-        const data = await response.json();
-        setQuestions(data.questions);
-      } catch (err) {
-        console.error("Quiz error:", err);
+            `HTTP ${response.status}: ${response.statusText}`
+        )
       }
-    }    
 
-    generateQuiz()
-  }, [lessonId])
-
-  const handleAnswerSelect = (questionIndex: number, answerIndex: number) => {
-    if (submitted) return
-    setSelectedAnswers((prev) => ({ ...prev, [questionIndex]: answerIndex }))
+      const data = await response.json()
+      setQuestions(data.questions || [])
+      setWeakSkills(data.weakSkills || [])
+      setUsedDifficulty(data.usedDifficulty || null)
+    } catch (err) {
+      console.error('Quiz load error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleSubmit = async () => {
-    if (submitted) return
+  /* Load FIRST quiz */
+  useEffect(() => {
+    loadQuiz()
+  }, [lessonId, userId])
 
-    // Calculate score
+  /* ----------------------------------------------------
+     Handle selecting answers
+  ---------------------------------------------------- */
+  const handleAnswerSelect = (qIndex: number, aIndex: number) => {
+    if (submitted) return
+    setSelectedAnswers((prev) => ({ ...prev, [qIndex]: aIndex }))
+  }
+
+  /* ----------------------------------------------------
+     SUBMIT quiz + update BKT + save attempt
+  ---------------------------------------------------- */
+  const handleSubmit = async () => {
+    if (submitted || questions.length === 0) return
+
     let correct = 0
     const results: Array<{ skillKey: string; correct: boolean }> = []
 
@@ -75,15 +96,16 @@ export default function QuizPage() {
       }
     })
 
-    const calculatedScore = correct / questions.length
-    setScore(calculatedScore)
+    const finalScore = correct / questions.length
+    setScore(finalScore)
     setSubmitted(true)
 
-    // Update BKT states
-    const newBktStates: Record<string, number> = {}
+    const newStates: Record<string, number> = {}
+
+    // Update BKT (option B)
     for (const result of results) {
       try {
-        const response = await fetch('/api/bkt/answer', {
+        const res = await fetch('/api/bkt/answer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -94,61 +116,51 @@ export default function QuizPage() {
           }),
         })
 
-        if (response.ok) {
-          const bktData = await response.json()
-          newBktStates[result.skillKey] = bktData.p_new
+        if (res.ok) {
+          const bkt = await res.json()
+          newStates[result.skillKey] = bkt.p_new
         }
-      } catch (error) {
-        console.error('Error updating BKT:', error)
+      } catch (err) {
+        console.error('BKT update failed:', err)
       }
     }
 
-    setBktStates(newBktStates)
+    setBktStates(newStates)
 
     // Save quiz attempt
-    try {
-      await fetch('/api/quiz/attempt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          lessonId,
-          answers: selectedAnswers,
-          score: calculatedScore,
-        }),
-      })
-    } catch (error) {
-      console.error('Error saving quiz attempt:', error)
-    }
+    await fetch('/api/quiz/attempt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        lessonId,
+        answers: selectedAnswers,
+        score: finalScore,
+      }),
+    })
   }
 
+  /* ----------------------------------------------------
+     UI: Loading State
+  ---------------------------------------------------- */
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-xl text-gray-600">Kvíz generálása...</div>
+        <div className="text-xl text-gray-800">Kvíz generálása...</div>
       </div>
     )
   }
 
-  if (!loading && questions.length === 0) {
+  if (questions.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-4">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Nem sikerült a kvízt generálni</h1>
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4 text-left">
-            <p className="text-sm text-yellow-800 font-semibold mb-2">Lehetséges okok:</p>
-            <ul className="text-xs text-yellow-700 list-disc list-inside space-y-1">
-              <li>Az OpenAI API kulcs nincs beállítva a <code className="bg-yellow-100 px-1 rounded">.env.local</code> fájlban</li>
-              <li>A Supabase nincs beállítva vagy a tananyag nem található</li>
-              <li>Az OpenAI API hívás sikertelen volt (nincs kredit, vagy hálózati hiba)</li>
-            </ul>
-            <p className="text-xs text-yellow-700 mt-3">
-              Ellenőrizd a böngésző konzolt részletesebb hibaüzenetért.
-            </p>
-          </div>
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            Nem sikerült a kvízt generálni
+          </h1>
           <Link
             href={`/lesson/${lessonId}`}
-            className="inline-block bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition"
+            className="bg-indigo-600 text-white px-6 py-2 rounded-lg"
           >
             Vissza a tananyaghoz
           </Link>
@@ -158,153 +170,146 @@ export default function QuizPage() {
   }
 
   const currentQ = questions[currentQuestion]
-  const isLastQuestion = currentQuestion === questions.length - 1
-  const allAnswered = Object.keys(selectedAnswers).length === questions.length
+  const isLast = currentQuestion === questions.length - 1
+  const allAnswered =
+    Object.keys(selectedAnswers).length === questions.length
 
+  /* ----------------------------------------------------
+     RENDER
+  ---------------------------------------------------- */
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
+
         <Link
           href={`/lesson/${lessonId}`}
-          className="text-indigo-600 hover:underline mb-4 inline-block"
+          className="text-indigo-700 font-medium mb-4 inline-block"
         >
-          ← Vissza a tananyaghoz
+          ← Vissza
         </Link>
 
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-3xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-3xl mx-auto text-gray-900">
+
+          {/* Header */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h1 className="text-3xl font-bold text-gray-900">Kvíz</h1>
-              <span className="text-sm text-gray-500">
-                {currentQuestion + 1} / {questions.length}
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-indigo-600 h-2 rounded-full transition-all"
-                style={{ width: `${((currentQuestion + 1) / questions.length) * 100}%` }}
-              />
-            </div>
+            <h1 className="text-3xl font-bold">Kvíz</h1>
+            {usedDifficulty && (
+              <p className="text-sm text-gray-700 mt-1">
+                Nehézség: <b>{usedDifficulty}</b>
+              </p>
+            )}
+            {weakSkills.length > 0 && (
+              <p className="text-xs text-gray-700 mt-1">
+                Fókuszált témák: {weakSkills.join(', ')}
+              </p>
+            )}
           </div>
 
+          {/* Result view */}
           {submitted && score !== null ? (
             <div className="text-center py-8">
               <div className="text-6xl font-bold mb-4 text-indigo-600">
                 {Math.round(score * 100)}%
               </div>
-              <p className="text-xl text-gray-700 mb-6">
-                {score >= 0.8
-                  ? 'Kiváló! Jól érted a témát! 🎉'
-                  : score >= 0.6
-                  ? 'Jó, de van még mit tanulnod! 💪'
-                  : 'Ne add fel! Próbáld újra! 📚'}
-              </p>
 
+              {/* BKT scoreboard */}
               {Object.keys(bktStates).length > 0 && (
-                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                  <h3 className="font-semibold mb-2">Tudásszint a témakörökben:</h3>
-                  <div className="space-y-2">
-                    {Object.entries(bktStates).map(([skill, pKnown]) => (
-                      <div key={skill} className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">{skill}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-32 bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
-                                pKnown >= 0.8 ? 'bg-green-500' : pKnown >= 0.5 ? 'bg-yellow-500' : 'bg-red-500'
-                              }`}
-                              style={{ width: `${pKnown * 100}%` }}
-                            />
-                          </div>
-                          <span className="text-sm font-medium w-12 text-right">
-                            {Math.round(pKnown * 100)}%
-                          </span>
-                        </div>
+                <div className="mt-6">
+                  <h3 className="font-semibold text-gray-900 mb-2">
+                    Tudásszint témakörönként:
+                  </h3>
+                  {Object.entries(bktStates).map(([skill, p]) => (
+                    <div key={skill} className="flex items-center gap-2 mb-2">
+                      <span className="text-sm w-40">{skill}</span>
+                      <div className="w-40 bg-gray-200 rounded-full h-2">
+                        <div
+                          className="h-2 rounded-full bg-indigo-600"
+                          style={{ width: `${p * 100}%` }}
+                        />
                       </div>
-                    ))}
-                  </div>
+                      <span className="text-sm font-medium w-10">
+                        {Math.round(p * 100)}%
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              <div className="mt-8 space-x-4">
+              {/* ACTION BUTTONS */}
+              <div className="mt-8 space-x-3 flex justify-center">
+
+                {/* 🔥 NEW BUTTON: Generate follow-up quiz */}
+                <button
+                  onClick={() => loadQuiz()}
+                  className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700"
+                >
+                  Új kvíz a gyenge témákból →
+                </button>
+
                 <Link
                   href={`/lesson/${lessonId}`}
-                  className="inline-block bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition"
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700"
                 >
                   Újraolvasás
                 </Link>
-                <button
-                  onClick={() => {
-                    setCurrentQuestion(0)
-                    setSelectedAnswers({})
-                    setSubmitted(false)
-                    setScore(null)
-                    setBktStates({})
-                  }}
-                  className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition"
-                >
-                  Újra próbálkozás
-                </button>
               </div>
             </div>
           ) : (
+            /* Question view */
             <>
-              <div className="mb-6">
-                <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-                  {currentQ.question}
-                </h2>
-                <div className="space-y-3">
-                  {currentQ.options.map((option, idx) => {
-                    const isSelected = selectedAnswers[currentQuestion] === idx
-                    const isCorrect = idx === currentQ.answer
-                    const showAnswer = submitted
+              <h2 className="text-2xl font-semibold mb-4 text-gray-900">
+                {currentQ.question}
+              </h2>
 
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleAnswerSelect(currentQuestion, idx)}
-                        disabled={submitted}
-                        className={`w-full text-left p-4 rounded-lg border-2 transition ${
-                          isSelected
+              <div className="space-y-3 mb-6">
+                {currentQ.options.map((opt, idx) => {
+                  const selected = selectedAnswers[currentQuestion] === idx
+
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() =>
+                        handleAnswerSelect(currentQuestion, idx)
+                      }
+                      disabled={submitted}
+                      className={`w-full text-left p-4 rounded-lg border-2 transition 
+                        ${
+                          selected
                             ? 'border-indigo-600 bg-indigo-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        } ${
-                          showAnswer && isCorrect
-                            ? 'border-green-500 bg-green-50'
-                            : showAnswer && isSelected && !isCorrect
-                            ? 'border-red-500 bg-red-50'
-                            : ''
+                            : 'border-gray-300 hover:border-gray-400'
                         }`}
-                      >
-                        <span className="font-medium mr-2">{String.fromCharCode(65 + idx)}.</span>
-                        {option}
-                      </button>
-                    )
-                  })}
-                </div>
+                    >
+                      {opt}
+                    </button>
+                  )
+                })}
               </div>
 
               <div className="flex justify-between">
                 <button
-                  onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
+                  onClick={() =>
+                    setCurrentQuestion(Math.max(0, currentQuestion - 1))
+                  }
                   disabled={currentQuestion === 0}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-gray-300 text-gray-900 rounded-lg disabled:opacity-50"
                 >
                   ← Előző
                 </button>
 
-                {isLastQuestion ? (
+                {isLast ? (
                   <button
                     onClick={handleSubmit}
-                    disabled={!allAnswered || submitted}
-                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!allAnswered}
+                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg"
                   >
                     Beküldés
                   </button>
                 ) : (
                   <button
-                    onClick={() => setCurrentQuestion(Math.min(questions.length - 1, currentQuestion + 1))}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                    onClick={() =>
+                      setCurrentQuestion(currentQuestion + 1)
+                    }
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
                   >
                     Következő →
                   </button>
@@ -317,4 +322,3 @@ export default function QuizPage() {
     </div>
   )
 }
-

@@ -1,65 +1,38 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase'
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@/lib/supabase";
 
-const BKT_SERVER_URL = process.env.BKT_SERVER_URL || 'http://localhost:8000'
-
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, skillKeys } = body
+    const { userId } = await req.json();
 
-    if (!userId || !Array.isArray(skillKeys)) {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'userId and skillKeys (array) are required' },
+        { error: "userId required" },
         { status: 400 }
-      )
+      );
     }
 
-    // Try to fetch from BKT server first
-    try {
-      const bktResponse = await fetch(`${BKT_SERVER_URL}/bkt/mastery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          skill_keys: skillKeys,
-        }),
-      })
+    const supabase = createServerClient();
 
-      if (bktResponse.ok) {
-        const bktData = await bktResponse.json()
-        return NextResponse.json(bktData)
-      }
-    } catch (error) {
-      console.warn('BKT server unavailable, fetching from database:', error)
-    }
-
-    // Fallback: fetch from database
-    const supabase = createServerClient()
-    const { data: states, error } = await supabase
-      .from('bkt_states')
-      .select('skill_key, p_known')
-      .eq('user_id', userId)
-      .in('skill_key', skillKeys)
+    const { data, error } = await supabase
+      .from("bkt_states")
+      .select("skill_id, p_known")
+      .eq("user_id", userId);
 
     if (error) {
-      console.error('Error fetching BKT states:', error)
+      console.warn("BKT fetch error:", error);
+      return NextResponse.json({});
     }
 
-    // Build response with defaults for missing skills
-    const skills: Record<string, number> = {}
-    skillKeys.forEach((key: string) => {
-      const state = states?.find((s) => s.skill_key === key)
-      skills[key] = state?.p_known ?? 0.5
-    })
+    // Convert to map
+    const mastery: Record<string, number> = {};
+    data?.forEach((row) => {
+      mastery[row.skill_id] = row.p_known;
+    });
 
-    return NextResponse.json({ skills })
-  } catch (error) {
-    console.error('Error in BKT mastery API:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch mastery', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return NextResponse.json(mastery);
+  } catch (err) {
+    console.warn("BKT mastery unexpected error:", err);
+    return NextResponse.json({});
   }
 }
-
