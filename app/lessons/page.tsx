@@ -25,6 +25,7 @@ export default function LessonsPage() {
         .order("updated_at", { ascending: false });
   
       setLessons(data || []);
+      setLoading(false);        // ← YOU FORGOT THIS
     };
   
     fetchLessons();

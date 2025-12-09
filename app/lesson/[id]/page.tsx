@@ -26,55 +26,55 @@ export default function LessonPage() {
   const contentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    let isMounted = true;
+  
     async function fetchLesson() {
       try {
-        const { data, error } = await supabase
-          .from('lessons')
-          .select('*')
-          .eq('id', lessonId)
-          .single()
-    
-        // CASE 1: Lesson exists → normal flow
+        const { data } = await supabase
+          .from("lessons")
+          .select("*")
+          .eq("id", lessonId)
+          .single();
+  
         if (data) {
-          setLesson(data)
-          return
+          if (isMounted) {
+            setLesson(data);
+            setLoading(false);
+          }
+          return;
         }
-    
-        // CASE 2: Lesson missing → auto-generate
-        console.log("Lesson missing. Auto-generating...")
-    
-        setLoading(true)
-    
-        const genRes = await fetch('/api/lesson-gen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+  
+        // Generate lesson
+        console.log("Lesson missing. Auto-generating…");
+        const genRes = await fetch("/api/lesson-gen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            lessonId,                 // important
-            topic: "Default topic",   // TODO: supply real topic name
+            lessonId,
+            topic: "Default topic",
             difficulty: "normal",
             learningStyle: "verbal"
-          })
-        })
-    
-        if (!genRes.ok) {
-          throw new Error("Lesson generation failed.")
+          }),
+        });
+  
+        if (!genRes.ok) throw new Error("Lesson generation failed");
+  
+        const gen = await genRes.json();
+  
+        if (isMounted) {
+          setLesson(gen.lesson);
+          setLoading(false);
         }
-    
-        const genData = await genRes.json()
-    
-        // Insert into UI state
-        setLesson(genData.lesson)
-    
-      } catch (error) {
-        console.error('Error fetching or generating lesson:', error)
-      } finally {
-        setLoading(false)
+      } catch (err) {
+        console.error(err);
+        if (isMounted) setLoading(false);
       }
     }
-    
-
-    fetchLesson()
-  }, [lessonId])
+  
+    fetchLesson();
+    return () => { isMounted = false };
+  }, [lessonId]);
+  
 
   // Track scroll depth
   useEffect(() => {
