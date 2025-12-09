@@ -1,45 +1,59 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { generateLesson } from '@/lib/ai'
-import { createServerClient } from '@/lib/supabase'
+// /app/api/lesson-gen/route.ts
+
+import { NextRequest, NextResponse } from "next/server";
+import { generateLesson } from "@/lib/ai";
+import { createServerClient } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
-    const { lessonId, topic, difficulty, learningStyle } = await req.json()
+    const body = await req.json();
+    const { topic, difficulty = "normal", learningStyle = "verbal" } = body;
 
-    if (!lessonId || !topic) {
+    if (!topic) {
       return NextResponse.json(
-        { error: 'lessonId and topic are required' },
+        { error: "Topic is required" },
         { status: 400 }
-      )
+      );
     }
 
-    const supabase = createServerClient()
+    // Generate lesson via AI
+    const result = await generateLesson(topic, difficulty, learningStyle);
 
-    // 1. Call AI to generate lesson JSON
-    const generated = await generateLesson(topic, difficulty, learningStyle)
+    if (!result?.title || !result?.content) {
+      return NextResponse.json(
+        { error: "AI did not return a valid lesson" },
+        { status: 500 }
+      );
+    }
 
-    // 2. Save into database
+    // Save to DB
+    const supabase = createServerClient();
     const { data, error } = await supabase
-      .from('lessons')
+      .from("lessons")
       .insert({
-        id: lessonId,
-        title: generated.title,
-        content: generated.content,
+        title: result.title,
+        content: result.content,
+        difficulty,
         topic,
-        difficulty: difficulty || 'normal'
       })
       .select()
-      .single()
+      .single();
 
-    if (error) throw error
+    if (error) {
+      console.error("Supabase insert error:", error);
+      return NextResponse.json(
+        { error: "Failed to save lesson", details: error.message },
+        { status: 500 }
+      );
+    }
 
-    return NextResponse.json({ lesson: data })
+    return NextResponse.json({ lesson: data }, { status: 200 });
 
-  } catch (err) {
-    console.error('lesson-gen error:', err)
+  } catch (err: any) {
+    console.error("lesson-gen error:", err);
     return NextResponse.json(
-      { error: 'Lesson generation failed', details: `${err}` },
+      { error: "Lesson generation failed", details: err.message },
       { status: 500 }
-    )
+    );
   }
 }

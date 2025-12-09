@@ -12,37 +12,24 @@ interface Lesson {
   topic: string | null
 }
 
+
 export default function LessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function fetchLessons() {
-      try {
-        const { data, error } = await supabase
-          .from('lessons')
-          .select('id, title, content, difficulty, topic')
-          .order('created_at', { ascending: false })
-
-        if (error) {
-          console.error('Supabase error:', error)
-          // Check if it's a configuration error
-          if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-            console.warn('Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local')
-          }
-          throw error
-        }
-        setLessons(data || [])
-      } catch (error) {
-        console.error('Error fetching lessons:', error)
-        // Don't show error to user, just empty state
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchLessons()
-  }, [])
+    const fetchLessons = async () => {
+      const { data, error } = await supabase
+        .from("lessons")
+        .select("*")
+        .order("updated_at", { ascending: false });
+  
+      setLessons(data || []);
+    };
+  
+    fetchLessons();
+  }, []);
+  
 
   if (loading) {
     return (

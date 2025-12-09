@@ -72,19 +72,43 @@ export interface LessonResponse {
    JSON CLEANER (shared)
 ------------------------------------------------ */
 function extractJson(text: string): any {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) {
-    console.error("MODEL OUTPUT:", text);
-    throw new Error("AI did not return JSON.");
+  // Remove code fences
+  let cleaned = text.replace(/```json|```/g, "").trim();
+
+  // Find the first { ... } block
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+
+  if (start === -1 || end === -1) {
+    console.error("RAW MODEL OUTPUT:\n", text);
+    throw new Error("Model did not output JSON.");
   }
 
+  cleaned = cleaned.substring(start, end + 1);
+
+  // --- Attempt direct parse ---
   try {
-    return JSON.parse(match[0]);
-  } catch (e) {
-    console.error("INVALID JSON:", match[0]);
-    throw new Error("Returned JSON is malformed.");
+    return JSON.parse(cleaned);
+  } catch (_) {
+    console.warn("First parse failed, attempting brace-repair…");
+  }
+
+  // --- Brace repair ---
+  const openBraces = (cleaned.match(/\{/g) || []).length;
+  const closeBraces = (cleaned.match(/\}/g) || []).length;
+
+  let fixed = cleaned;
+  while (closeBraces < openBraces) fixed += "}";
+  while (openBraces < closeBraces) fixed = "{" + fixed;
+
+  try {
+    return JSON.parse(fixed);
+  } catch (err) {
+    console.error("Final JSON parsing failure.\nOUTPUT:\n", cleaned);
+    throw new Error("Returned JSON is malformed even after repair.");
   }
 }
+
 
 /* ---------------------------------------------
    QUIZ GENERATOR
@@ -149,33 +173,50 @@ export async function generateLesson(
   difficulty = "normal",
   learningStyle = "verbal"
 ): Promise<LessonResponse> {
+
   const prompt = `
-Generate a personalized history lesson.
+You MUST output a STRICT JSON object with EXACTLY these keys:
 
-Topic: ${topic}
-Difficulty: ${difficulty}
-Learning style: ${learningStyle}
-
-Return ONLY JSON:
 {
-  "title": "...",
-  "content": "..."
+  "title": string,
+  "content": string
 }
+
+Rules:
+- NO explanation
+- NO markdown
+- NO prose outside the JSON
+- Title must be 5–12 words
+- Content must be ~3–6 paragraphs
+- Topic: "${topic}"
+- Difficulty: "${difficulty}"
+- Learning style: "${learningStyle}"
+
+Now generate ONLY the JSON object.
 `;
 
+  const model =
+    provider === "ollama"
+      ? ollamaModel
+      : provider === "groq"
+      ? "llama-3.1-70b-versatile"
+      : "gpt-4o-mini";
+
   const completion = await aiClient.chat.completions.create({
-    model: provider === "ollama" ? ollamaModel : "gpt-4o-mini",
+    model,
     messages: [
-      { role: "system", content: "You output lessons in JSON only." },
-      { role: "user", content: prompt },
+      { role: "system", content: "Return STRICT JSON ONLY. Never add comments." },
+      { role: "user", content: prompt }
     ],
-    temperature: 0.7,
+    temperature: 0.4,
+    ...(provider !== "ollama" && { response_format: { type: "json_object" } })
   });
 
-  return extractJson(
-    completion.choices?.[0]?.message?.content || ""
-  ) as LessonResponse;
+  const raw = completion.choices?.[0]?.message?.content || "";
+  console.log("RAW MODEL OUTPUT:\n\n", completion.choices?.[0]?.message?.content);
+  return extractJson(raw) as LessonResponse;
 }
+
 
 /* ---------------------------------------------
    EXPLANATION GENERATOR
