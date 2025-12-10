@@ -1,24 +1,15 @@
-// app/api/quiz-gen/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { generateQuiz } from '@/lib/ai'
 import { createServerClient } from '@/lib/supabase'
 
-type Difficulty = 'easy' | 'normal' | 'hard'
-
 interface SkillMastery {
-  [skillId: string]: number; // p_known
+  [skill: string]: number;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const {
-      userId,
-      lessonId,
-      difficulty,     // optional override
-      learningStyle,  // optional override
-      numQuestions,   // optional, but we ignore and force 7
-    } = body
+    const { userId, lessonId, difficulty, learningStyle, numQuestions } = body
 
     if (!userId || !lessonId) {
       return NextResponse.json(
@@ -30,7 +21,34 @@ export async function POST(request: NextRequest) {
     const supabase = createServerClient()
 
     /* ---------------------------------------------------------
-       1) FETCH LESSON CONTENT
+       1) FETCH MASTERY FOR USER
+    --------------------------------------------------------- */
+    const masteryRes = await fetch(`${process.env.BASE_URL}/api/bkt/mastery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId })
+    });
+
+    let mastery: SkillMastery = {};
+    if (masteryRes.ok) {
+      mastery = await masteryRes.json() as SkillMastery;
+    } else {
+      console.warn("Could not fetch mastery → using empty skill map");
+    }
+
+    // Convert mastery → sorted weakest → strongest
+    const sortedWeaknesses = Object.entries(mastery)
+      .sort((a, b) => a[1] - b[1]) // ascending mastery score
+      .map(([skill]) => skill);
+
+    // Take 1–3 weakest skills
+    const weakSkills = sortedWeaknesses.slice(0, 3);
+
+    console.log("Weakest skills:", weakSkills);
+
+
+    /* ---------------------------------------------------------
+       2) FETCH LESSON CONTENT FROM DB
     --------------------------------------------------------- */
     const { data: lesson, error: lessonError } = await supabase
       .from('lessons')
@@ -39,117 +57,51 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (lessonError || !lesson) {
-      console.error('Lesson fetch error:', lessonError)
       return NextResponse.json(
         { error: 'Lesson not found', details: lessonError?.message },
         { status: 404 }
       )
     }
 
-    /* ---------------------------------------------------------
-       2) FETCH BKT MASTERY → WEAK SKILLS
-    --------------------------------------------------------- */
-    let weakSkills: string[] = []
-    let mastery: SkillMastery = {}
-
-    try {
-      const masteryUrl = request.nextUrl.clone()
-      masteryUrl.pathname = "api/bkt/mastery"
-      const masteryRes = await fetch(masteryUrl.toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      })
-
-      if (masteryRes.ok) {
-        mastery = (await masteryRes.json()) as SkillMastery
-
-        const entries = Object.entries(mastery) as [string, number][]
-        weakSkills = entries
-          .sort(([, a], [, b]) => a - b) // weakest first
-          .slice(0, 3)
-          .map(([skillId]) => skillId)
-      } else {
-        console.warn(
-          'BKT mastery API returned non-OK status:',
-          masteryRes.status
-        )
-      }
-    } catch (err) {
-      console.warn('Failed to fetch BKT mastery, continuing without it:', err)
-    }
 
     /* ---------------------------------------------------------
-       3) CHOOSE ADAPTIVE DIFFICULTY (Option B)
-    --------------------------------------------------------- */
-    let effectiveDifficulty: Difficulty =
-      difficulty || (lesson.difficulty as Difficulty) || 'normal'
-
-    if (Object.keys(mastery).length > 0) {
-      const scores = Object.values(mastery)
-      const minScore = Math.min(...scores) // weakest mastery
-
-      if (minScore < 0.4) {
-        effectiveDifficulty = 'easy'
-      } else if (minScore < 0.7) {
-        effectiveDifficulty = 'normal'
-      } else {
-        effectiveDifficulty = 'hard'
-      }
-    }
-
-    const effectiveLearningStyle =
-      learningStyle || 'verbal' // later you can pull from user preferences
-
-    const QUESTION_COUNT = 7
-
-    /* ---------------------------------------------------------
-       4) GENERATE QUIZ VIA AI (BKT-FOCUSED)
+       3) GENERATE AI QUIZ (ADAPTIVE)
     --------------------------------------------------------- */
     const quiz = await generateQuiz(
       lesson.content,
-      effectiveDifficulty,
-      effectiveLearningStyle,
-      QUESTION_COUNT,
-      weakSkills
+      difficulty || lesson.difficulty || 'normal',
+      learningStyle || 'verbal',
+      numQuestions || 5,
+      weakSkills        // 👈 NEW adaptive input
     )
 
+
     /* ---------------------------------------------------------
-       5) SAVE QUIZ IN DB
+       4) STORE GENERATED QUIZ IN DB
     --------------------------------------------------------- */
-    let savedQuiz: any = null
-    try {
-      const { data, error: saveError } = await supabase
-        .from('quizzes')
-        .insert({
-          lesson_id: lessonId,
-          questions: quiz.questions,
-        })
-        .select()
-        .single()
+    const { data: savedQuiz, error: saveErr } = await supabase
+      .from("quizzes")
+      .insert({
+        lesson_id: lessonId,
+        questions: quiz.questions,
+      })
+      .select()
+      .single()
 
-      if (saveError) {
-        console.warn('Quiz save error (non-critical):', saveError)
-      } else {
-        savedQuiz = data
-      }
-    } catch (err) {
-      console.warn('Quiz save threw (non-critical):', err)
-    }
+    if (saveErr) console.warn("Warning: quiz not saved:", saveErr)
+
 
     /* ---------------------------------------------------------
-       6) RETURN RESULT
+       5) RETURN RESULT
     --------------------------------------------------------- */
     return NextResponse.json({
       quiz: savedQuiz || { id: 'temp', questions: quiz.questions },
-      questions: quiz.questions,
       weakSkills,
-      usedDifficulty: effectiveDifficulty,
-      usedLearningStyle: effectiveLearningStyle,
-      questionCount: QUESTION_COUNT,
-    })
+      questions: quiz.questions
+    });
+
   } catch (err) {
-    console.error('quiz-gen ERROR:', err)
+    console.error("quiz-gen ERROR:", err)
     return NextResponse.json(
       { error: 'Quiz generation failed', details: `${err}` },
       { status: 500 }

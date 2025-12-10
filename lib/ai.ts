@@ -110,7 +110,9 @@ function extractJson(text: string): any {
 }
 
 
-/* ---------- QUIZ GENERATOR (BKT-AWARE) ---------- */
+/* ---------------------------------------------
+   QUIZ GENERATOR
+------------------------------------------------ */
 export async function generateQuiz(
   lessonContent: string,
   difficulty: "easy" | "normal" | "hard" = "normal",
@@ -119,55 +121,40 @@ export async function generateQuiz(
     | "verbal"
     | "step-by-step"
     | "short-summaries" = "verbal",
-  numQuestions = 7,              // <- default 7
-  weakSkills: string[] = []      // <- BKT focus
+  numQuestions = 5,
+  weakSkills: string[] = []
 ): Promise<QuizResponse> {
   const prompt = `
-    Generate ${numQuestions} multiple-choice questions based on the lesson below.
-    
-    ${lessonContent}
-    
-    Focus extra questions on weak skills: ${weakSkills.join(", ") || "None"}.
-    
-    STRICT RULES:
-    - Output ONLY valid JSON.
-    - Options must be an array of FOUR plain strings WITHOUT prefixes like "A)", "B)".
-      Example: ["Germany invaded...", "Austria...", "France...", "Serbia..."]
-    - The structure MUST be:
-    
-    {
-      "questions": [
-        {
-          "question": "string",
-          "options": ["opt1","opt2","opt3","opt4"],
-          "answer": 0,
-          "skill_key": "string"
-        }
-      ]
-    }
-    
-    No comments, no markdown, no explanation — ONLY the JSON object.
-  `;
+Generate ${numQuestions} history quiz questions based on this content:
 
-  const model =
-    provider === "ollama"
-      ? ollamaModel
-      : provider === "groq"
-      ? "llama-3.1-70b-versatile"
-      : "gpt-4o-mini";
+${lessonContent}
+Weak skills to focus on: ${weakSkills.join(", ") || "None"}
+Your questions must reinforce these skills whenever possible.
+Instructions:
+- Difficulty: ${difficulty}
+- Learning style: ${learningStyle}
+- Every question must have "question", "options", "answer", and "skill_key".
+- Return ONLY JSON:
+{
+  "questions": [
+    { "question": "...", "options": ["A","B","C","D"], "answer": 0, "skill_key": "..." }
+  ]
+}
+`;
 
   const completion = await aiClient.chat.completions.create({
-    model,
+    model: provider === "ollama" ? ollamaModel : provider === "groq"
+      ? "llama-3.1-70b-versatile"
+      : "gpt-4o-mini",
     messages: [
       {
         role: "system",
         content:
-          "You generate high-quality history multiple-choice quizzes. Always respond with pure JSON only.",
+          "You generate history quizzes. Always respond with pure JSON only.",
       },
       { role: "user", content: prompt },
     ],
     temperature: 0.7,
-    ...(provider !== "ollama" && { response_format: { type: "json_object" } }),
   });
 
   const text = completion.choices?.[0]?.message?.content || "";
@@ -183,31 +170,11 @@ export async function generateQuiz(
 /* ---------------------------------------------
    LESSON GENERATOR
 ------------------------------------------------ */
-// lib/ai.ts (only generateLesson changed)
-
 export async function generateLesson(
   topic: string,
   difficulty = "normal",
   learningStyle = "verbal"
 ): Promise<LessonResponse> {
-
-  const visualExtra =
-    learningStyle === "visual"
-      ? `
-Additionally, because the student is a VISUAL learner:
-
-- At the END of "content", append 1–2 short Mermaid diagrams.
-- Each diagram MUST be a fenced code block with this exact format:
-
-\`\`\`mermaid
-flowchart TD
-  A[Start] --> B[Some step]
-\`\`\`
-
-- Use simple flowcharts or timelines that summarize the most important causes / events / relationships in the topic.
-- The diagrams must be valid Mermaid syntax.
-`
-      : "";
 
   const prompt = `
 You MUST output a STRICT JSON object with EXACTLY these keys:
@@ -219,17 +186,13 @@ You MUST output a STRICT JSON object with EXACTLY these keys:
 
 Rules:
 - NO explanation
-- NO markdown outside the JSON
-- NO prose outside the JSON itself
-- "title" must be 5–12 words
-- "content" must be ~3–6 paragraphs of text.
+- NO markdown
+- NO prose outside the JSON
+- Title must be 5–12 words
+- Content must be ~3–6 paragraphs
 - Topic: "${topic}"
 - Difficulty: "${difficulty}"
 - Learning style: "${learningStyle}"
-${visualExtra}
-
-"content" MAY contain markdown (headings, lists, etc.). 
-If you add diagrams for visual learners, put them at the END of the content as Mermaid code fences as described above.
 
 Now generate ONLY the JSON object.
 `;
@@ -245,14 +208,14 @@ Now generate ONLY the JSON object.
     model,
     messages: [
       { role: "system", content: "Return STRICT JSON ONLY. Never add comments." },
-      { role: "user", content: prompt },
+      { role: "user", content: prompt }
     ],
     temperature: 0.4,
-    ...(provider !== "ollama" && { response_format: { type: "json_object" } }),
+    ...(provider !== "ollama" && { response_format: { type: "json_object" } })
   });
 
   const raw = completion.choices?.[0]?.message?.content || "";
-  console.log("RAW MODEL OUTPUT:\n\n", raw);
+  console.log("RAW MODEL OUTPUT:\n\n", completion.choices?.[0]?.message?.content);
   return extractJson(raw) as LessonResponse;
 }
 

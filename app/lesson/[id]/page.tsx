@@ -1,14 +1,9 @@
-// app/lesson/[id]/page.tsx
 'use client'
 
-import React, { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-// @ts-ignore
-import ReactMarkdown from 'react-markdown'
-// @ts-ignore
-import mermaid from 'mermaid'
 
 interface Lesson {
   id: string
@@ -18,35 +13,6 @@ interface Lesson {
   topic: string | null
 }
 
-function MermaidBlock({ code }: { code: string }) {
-  const ref = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!ref.current) return
-
-    // Clear previous content
-    ref.current.innerHTML = ''
-
-    // Configure mermaid (do NOT start on load globally)
-    mermaid.initialize({ startOnLoad: false })
-
-    const id = 'mermaid-' + Math.random().toString(36).slice(2)
-    const el = document.createElement('div')
-    el.className = 'mermaid'
-    el.id = id
-    el.textContent = code
-    ref.current.appendChild(el)
-
-    try {
-      mermaid.init(undefined, `#${id}`)
-    } catch (e) {
-      console.error('Mermaid render error:', e)
-    }
-  }, [code])
-
-  return <div ref={ref} className="my-4" />
-}
-
 export default function LessonPage() {
   const params = useParams()
   const router = useRouter()
@@ -54,85 +20,78 @@ export default function LessonPage() {
 
   const [lesson, setLesson] = useState<Lesson | null>(null)
   const [loading, setLoading] = useState(true)
-  const [userId] = useState('00000000-0000-0000-0000-000000000001') // TODO: replace with auth
+  const [userId] = useState('00000000-0000-0000-0000-000000000001') // In production, get from auth
   const [scrollDepth, setScrollDepth] = useState(0)
   const [startTime] = useState(Date.now())
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Fetch (or auto-generate) lesson
   useEffect(() => {
-    let isMounted = true
-
+    let isMounted = true;
+  
     async function fetchLesson() {
       try {
-        const { data, error } = await supabase
-          .from('lessons')
-          .select('*')
-          .eq('id', lessonId)
-          .single()
-
-        if (error) {
-          console.warn('Supabase lesson error:', error.message)
-        }
-
+        const { data } = await supabase
+          .from("lessons")
+          .select("*")
+          .eq("id", lessonId)
+          .single();
+  
         if (data) {
           if (isMounted) {
-            setLesson(data as Lesson)
-            setLoading(false)
+            setLesson(data);
+            setLoading(false);
           }
-          return
+          return;
         }
-
-        // Auto-generate if missing
-        console.log('Lesson missing. Auto-generating…')
-        const genRes = await fetch('/api/lesson-gen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+  
+        // Generate lesson
+        console.log("Lesson missing. Auto-generating…");
+        const genRes = await fetch("/api/lesson-gen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             lessonId,
-            topic: 'Default topic', // you can later wire a real topic
-            difficulty: 'normal',
-            learningStyle: 'verbal', // we’re not using "visual" anymore
+            topic: "Default topic",
+            difficulty: "normal",
+            learningStyle: "verbal"
           }),
-        })
-
-        if (!genRes.ok) {
-          throw new Error('Lesson generation failed')
-        }
-
-        const gen = await genRes.json()
+        });
+  
+        if (!genRes.ok) throw new Error("Lesson generation failed");
+  
+        const gen = await genRes.json();
+  
         if (isMounted) {
-          setLesson(gen.lesson as Lesson)
-          setLoading(false)
+          setLesson(gen.lesson);
+          setLoading(false);
         }
       } catch (err) {
-        console.error('Error fetching/generating lesson:', err)
-        if (isMounted) setLoading(false)
+        console.error(err);
+        if (isMounted) setLoading(false);
       }
     }
+  
+    fetchLesson();
+    return () => { isMounted = false };
+  }, [lessonId]);
+  
 
-    fetchLesson()
-    return () => {
-      isMounted = false
-    }
-  }, [lessonId])
-
-  // Scroll tracking
+  // Track scroll depth
   useEffect(() => {
     const handleScroll = () => {
-      if (!contentRef.current) return
+      if (contentRef.current) {
+        const element = contentRef.current
+        const scrollTop = window.scrollY
+        const elementTop = element.offsetTop
+        const elementHeight = element.scrollHeight
+        const windowHeight = window.innerHeight
 
-      const element = contentRef.current
-      const scrollTop = window.scrollY
-      const elementTop = element.offsetTop
-      const elementHeight = element.scrollHeight
-      const windowHeight = window.innerHeight
-
-      const scrolled = Math.max(
-        0,
-        Math.min(1, (scrollTop + windowHeight - elementTop) / elementHeight)
-      )
-      setScrollDepth(scrolled)
+        const scrolled = Math.max(
+          0,
+          Math.min(1, (scrollTop + windowHeight - elementTop) / elementHeight)
+        )
+        setScrollDepth(scrolled)
+      }
     }
 
     window.addEventListener('scroll', handleScroll)
@@ -161,25 +120,24 @@ export default function LessonPage() {
   }, [lessonId, userId, scrollDepth, startTime])
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-xl font-medium text-gray-700 mb-3">
-            Tananyag előkészítése…
-          </div>
-          <div className="animate-spin h-10 w-10 border-4 border-gray-300 border-t-indigo-600 rounded-full mx-auto" />
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-xl font-medium text-gray-700 mb-3">
+          Tananyag előkészítése…
         </div>
+        <div className="animate-spin h-10 w-10 border-4 border-gray-300 border-t-indigo-600 rounded-full mx-auto"></div>
       </div>
-    )
-  }
+    </div>
+  )
+}
+
 
   if (!lesson) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            Tananyag nem található
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Tananyag nem található</h1>
           <Link href="/lessons" className="text-indigo-600 hover:underline">
             Vissza a tananyagokhoz
           </Link>
@@ -199,9 +157,7 @@ export default function LessonPage() {
         </Link>
 
         <article className="bg-white rounded-lg shadow-lg p-8 max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            {lesson.title}
-          </h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">{lesson.title}</h1>
 
           {lesson.topic && (
             <div className="mb-4">
@@ -228,37 +184,13 @@ export default function LessonPage() {
 
           <div
             ref={contentRef}
-            className="prose prose-lg max-w-none text-gray-700 leading-relaxed"
+            className="prose prose-lg max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed"
           >
-            <ReactMarkdown
-              components={{
-                // Type is explicitly any so TS doesn’t complain about implicit any
-                code({
-                  node,
-                  inline,
-                  className,
-                  children,
-                  ...props
-                }: any) {
-                  const match = /language-(\w+)/.exec(className || '')
-                  const code = String(children).trim()
-
-                  // ```mermaid``` → render diagram
-                  if (!inline && match?.[1] === 'mermaid') {
-                    return <MermaidBlock code={code} />
-                  }
-
-                  // default inline / fenced code
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  )
-                },
-              }}
-            >
-              {lesson.content}
-            </ReactMarkdown>
+            {lesson.content.split('\n').map((paragraph, idx) => (
+              <p key={idx} className="mb-4">
+                {paragraph || '\u00A0'}
+              </p>
+            ))}
           </div>
 
           <div className="mt-8 pt-8 border-t border-gray-200">
@@ -279,3 +211,4 @@ export default function LessonPage() {
     </div>
   )
 }
+

@@ -5,10 +5,10 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-5xl font-bold text-black-900 mb-4 text-center">
+          <h1 className="text-5xl font-bold text-gray-900 mb-4 text-center">
             History Tutor AI
           </h1>
-          <p className="text-xl text-black-700 mb-12 text-center">
+          <p className="text-xl text-gray-700 mb-12 text-center">
             Adaptív történelem tanulás Knowledge Tracing és AI segítségével
           </p>
 
@@ -17,7 +17,7 @@ export default function Home() {
               <h2 className="text-2xl font-semibold mb-4 text-indigo-600">
                 Tananyagok
               </h2>
-              <p className="text-black-600 mb-4">
+              <p className="text-gray-600 mb-4">
                 Olvasd el a történelem tananyagokat, amelyek a tanulási stílusodhoz igazodnak.
               </p>
               <Link
@@ -32,7 +32,7 @@ export default function Home() {
               <h2 className="text-2xl font-semibold mb-4 text-green-600">
                 Kvízek
               </h2>
-              <p className="text-black-600 mb-4">
+              <p className="text-gray-600 mb-4">
                 Teszteld a tudásod adaptív kvízekkel, amelyek a teljesítményed alapján változnak.
               </p>
               <Link
@@ -46,7 +46,7 @@ export default function Home() {
 
           <div className="bg-white rounded-lg shadow-lg p-8">
             <h2 className="text-2xl font-semibold mb-4">Hogyan működik?</h2>
-            <ol className="list-decimal list-inside space-y-3 text-black-700">
+            <ol className="list-decimal list-inside space-y-3 text-gray-700">
               <li>Válassz egy történelem témát és olvasd el a személyre szabott tananyagot</li>
               <li>Oldj meg egy AI által generált kvízt a témáról</li>
               <li>A Knowledge Tracing modell követi a tudásod fejlődését</li>
