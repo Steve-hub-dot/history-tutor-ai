@@ -26,34 +26,50 @@ export default function QuizPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId: "00000000-0000-0000-0000-000000000001",  // TODO: replace after auth
+            userId: "00000000-0000-0000-0000-000000000001",
             lessonId,
             difficulty: "normal",
             learningStyle: "verbal",
             numQuestions: 5,
-          })
+          }),
         });
-    
+  
         if (!response.ok) {
           const errorData = await response.json();
-          const errorMessage =
-            errorData.error ||
-            errorData.details ||
-            `HTTP ${response.status}: ${response.statusText}`;
-    
-          console.error("Quiz generation failed:", errorMessage);
-          throw new Error(errorMessage);
+          throw new Error(errorData.error || "Quiz generation failed");
         }
-    
-        const data = await response.json();
-        setQuestions(data.questions);
+  
+        const data: { questions: QuizQuestion[] } = await response.json();
+
+        const cleanOptions = (options: string[]): string[] =>
+          options.map((opt: string) => {
+            if (!opt) return opt;
+
+            return opt
+              .replace(/^[\s\-–•]*/, "")
+              .replace(/^(?:[A-D]|[1-4])[\.\)\:]\s*/i, "")
+              .trim();
+          });
+
+        setQuestions(
+          data.questions.map((q: QuizQuestion) => ({
+            ...q,
+            options: cleanOptions(q.options),
+          }))
+        );
+
+  
       } catch (err) {
         console.error("Quiz error:", err);
+      } finally {
+        setLoading(false); // ← VERY IMPORTANT
       }
-    }    
-
-    generateQuiz()
-  }, [lessonId])
+    }
+  
+    generateQuiz();
+  }, [lessonId]);
+  
+  
 
   const handleAnswerSelect = (questionIndex: number, answerIndex: number) => {
     if (submitted) return

@@ -24,3 +24,29 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+
+/* ------------------------------
+   GLOBAL DARKER TEXT OVERRIDES
+--------------------------------*/
+
+body, input, select, textarea, button {
+  color: #1f2937 !important; /* gray-800 */
+}
+
+/* Placeholder text darker */
+input::placeholder,
+textarea::placeholder {
+  color: #4b5563 !important; /* gray-600 */
+  opacity: 1 !important;
+}
+
+/* Labels and small text */
+label, .text-sm, .text-xs, p {
+  color: #1f2937 !important; /* gray-800 */
+}
+
+/* Tailwind prose (lesson reader) */
+.prose {
+  color: #1f2937 !important;
+}

@@ -170,11 +170,37 @@ Instructions:
 /* ---------------------------------------------
    LESSON GENERATOR
 ------------------------------------------------ */
+/* ---------------------------------------------
+   LESSON GENERATOR (BKT-AWARE)
+------------------------------------------------ */
 export async function generateLesson(
   topic: string,
-  difficulty = "normal",
-  learningStyle = "verbal"
+  difficulty: string = "normal",
+  learningStyle: string = "verbal",
+  weakSkills: string[] = []
 ): Promise<LessonResponse> {
+  const model =
+    provider === "ollama"
+      ? ollamaModel
+      : provider === "groq"
+      ? "llama-3.1-70b-versatile"
+      : "gpt-4o-mini";
+
+  const learnerModelDescription =
+    weakSkills.length > 0
+      ? `The student is particularly weak in the following subskills or subtopics related to the theme: ${weakSkills.join(
+          ", "
+        )}.
+Design a REMEDIAL lesson:
+- Re-explain these weak skills in simpler language.
+- Use more concrete examples, analogies, and step-by-step reasoning for them.
+- Explicitly connect these weak skills back to the main topic.
+- Spend proportionally more space on these weak skills than on already mastered areas.`
+      : `You do NOT know the student's current mastery. 
+Design a CLEAR, INTRODUCTORY lesson:
+- Explain the topic from the ground up.
+- Use a logically structured flow and highlight core concepts.
+- Avoid assuming prior detailed knowledge.`;
 
   const prompt = `
 You MUST output a STRICT JSON object with EXACTLY these keys:
@@ -193,31 +219,30 @@ Rules:
 - Topic: "${topic}"
 - Difficulty: "${difficulty}"
 - Learning style: "${learningStyle}"
+- If weak skills are provided, this is a personalised remedial lesson.
+- If no weak skills are provided, this is an initial, general lesson.
+
+Learner model:
+${learnerModelDescription}
 
 Now generate ONLY the JSON object.
 `;
-
-  const model =
-    provider === "ollama"
-      ? ollamaModel
-      : provider === "groq"
-      ? "llama-3.1-70b-versatile"
-      : "gpt-4o-mini";
 
   const completion = await aiClient.chat.completions.create({
     model,
     messages: [
       { role: "system", content: "Return STRICT JSON ONLY. Never add comments." },
-      { role: "user", content: prompt }
+      { role: "user", content: prompt },
     ],
     temperature: 0.4,
-    ...(provider !== "ollama" && { response_format: { type: "json_object" } })
+    ...(provider !== "ollama" && { response_format: { type: "json_object" } }),
   });
 
   const raw = completion.choices?.[0]?.message?.content || "";
-  console.log("RAW MODEL OUTPUT:\n\n", completion.choices?.[0]?.message?.content);
+  console.log("RAW LESSON MODEL OUTPUT:\n\n", raw);
   return extractJson(raw) as LessonResponse;
 }
+
 
 
 /* ---------------------------------------------
