@@ -1,0 +1,14 @@
+
+//A diák megválaszol egy kvízkérdést → a frontend elküldi a választot a BKT endpointnak, majd frissíti a lokális UI-t az új p_known alapján.
+
+// (React) onAnswerSubmitted
+async function submitAnswer({ userId, skillKey, correct, lessonId, questionId }) {
+  const res = await fetch('/api/bkt/answer', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ user_id: userId, skill_key: skillKey, correct, lesson_id: lessonId, question_id: questionId })
+  });
+  const data = await res.json();
+  // data.p_new -> használhatod ajánlás szabályokhoz
+  return data;
+}
